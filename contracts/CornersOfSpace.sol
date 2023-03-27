@@ -54,11 +54,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     /******************** EVENTS ********************/
 
     event AssetMinted(address indexed creator, uint256 _tokenId, string args);
-    event ChangeStateToken(
-        address indexed owner,
-        uint256 _tokenId,
-        bool _state
-    );
 
     /******************** CONSTRUCTOR ********************/
 
@@ -151,15 +146,17 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         if (ECDSA.recover(message, _sig) != verifier) {
             revert UnauthorisedTx();
         }
-
+        if (!_free) {
+            _transfer(msg.sender, _tokenAmount, _payToken);
+        }
         for (uint i; i < _tokenAmount; i++) {
             uint256 newTokenId = _currentTokenId + 1;
             _safeMint(msg.sender, newTokenId);
             _currentTokenId++;
             emit AssetMinted(msg.sender, newTokenId, _args);
         }
-        if (!_free) {
-            _transfer(msg.sender, _tokenAmount, _payToken);
+        if (_nftPrice != usdPrice) {
+            revert PriceChanged();
         }
     }
 
