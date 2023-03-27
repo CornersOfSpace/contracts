@@ -1,13 +1,38 @@
-# Sample Hardhat Project
+# Corners Of Space NFT Contract
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a script that deploys that contract.
+## Deploying Contract
 
-Try running some of the following tasks:
+### 1) Install dependencies:
 
 ```shell
-npx hardhat help
+npm i
+```
+
+### 2) Fill In .env
+
+- Create .env file
+- Copy .env.example in it
+- Double check pre-filled fields if they qualify your needs and wants
+- Fill missing fields
+
+### 3) Deploy
+
+Current config let's you deploy on 2 chains: BSC Mainnet and BSC Testnet.
+
+To deploy NFT contract to testnet:
+
+```shell
+npx hardhat deploy --network bscTestnet
+```
+
+To deploy NFT contract to testnet:
+
+```shell
+npx hardhat deploy --network bscMainnet
+```
+
+### Testing
+
+```shell
 npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat run scripts/deploy.ts
 ```

@@ -15,6 +15,7 @@ error InvalidNonce();
 error NotEnoughValue();
 error ValueTransferFailed();
 error PriceChanged();
+error InvalidTokenAmount();
 
 contract CornersOfSpace is ERC721Enumerable, AccessControl {
     using SafeERC20 for IERC20;
@@ -41,13 +42,12 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     uint256 public daoSharePercentage; // 0-100 value
     uint256 public liquiditySharePercentage; // 0-100 value
 
-    uint256 public usdPrice; // 18 decimal value
-
     mapping(uint256 => bool) private usedNonces;
 
     /******************** EVENTS ********************/
 
-    event AssetMinted(address indexed creator, uint256 _tokenId, string args);
+    event AssetMinted(uint256 _tokenId, string args);
+    event BundleMinted(uint256[] _tokenIds, string args);
 
     /******************** CONSTRUCTOR ********************/
 
@@ -56,7 +56,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         address _adminController,
         address _verifier,
         AggregatorV3Interface _priceFeed,
-        uint256 _usdPrice,
         string memory _name,
         string memory _symbol,
         string memory _uri
@@ -65,7 +64,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         _setRoleAdmin(ADMIN, ULTIMATE_ADMIN);
         _setupRole(ADMIN, _admin);
 
-        usdPrice = _usdPrice;
         baseURI = _uri;
         verifier = _verifier;
         bnbUSDFeed = _priceFeed;
@@ -94,31 +92,37 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         address _payToken,
         uint256 _nftPrice,
         uint256 _nonce,
+        uint64 _blockDeadline,
         bytes calldata _sig,
         string calldata _args // 20 symbols max
     ) public payable {
         _handleNonce(_nonce);
 
         bytes32 message = prefixed(
-            keccak256(abi.encodePacked(_free, _nftPrice, _nonce, _args))
+            keccak256(
+                abi.encodePacked(
+                    msg.sender,
+                    _free,
+                    _nftPrice,
+                    _nonce,
+                    _blockDeadline,
+                    _args
+                )
+            )
         );
         if (ECDSA.recover(message, _sig) != verifier) {
             revert UnauthorisedTx();
         }
 
         if (!_free) {
-            _transfer(msg.sender, 1, _payToken);
+            _transfer(msg.sender, 1, _payToken, _nftPrice);
         }
 
         uint256 newTokenId = _currentTokenId + 1;
-        _safeMint(msg.sender, newTokenId);
         _currentTokenId++;
+        _safeMint(msg.sender, newTokenId);
 
-        if (_nftPrice != usdPrice) {
-            revert PriceChanged();
-        }
-
-        emit AssetMinted(msg.sender, newTokenId, _args);
+        emit AssetMinted(newTokenId, _args);
     }
 
     function bundleMint(
@@ -126,6 +130,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         address _payToken,
         uint256 _nftPrice,
         uint256 _nonce,
+        uint64 _blockDeadline,
         bytes calldata _sig,
         string calldata _args, // 20 symbols max
         uint256 _tokenAmount
@@ -134,24 +139,35 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
 
         bytes32 message = prefixed(
             keccak256(
-                abi.encodePacked(_free, _nftPrice, _nonce, _args, _tokenAmount)
+                abi.encodePacked(
+                    msg.sender,
+                    _free,
+                    _nftPrice,
+                    _nonce,
+                    _blockDeadline,
+                    _args,
+                    _tokenAmount
+                )
             )
         );
         if (ECDSA.recover(message, _sig) != verifier) {
             revert UnauthorisedTx();
         }
         if (!_free) {
-            _transfer(msg.sender, _tokenAmount, _payToken);
+            _transfer(msg.sender, _tokenAmount, _payToken, _nftPrice);
         }
+        uint256[] memory tokenIds;
         for (uint i; i < _tokenAmount; i++) {
             uint256 newTokenId = _currentTokenId + 1;
-            _safeMint(msg.sender, newTokenId);
             _currentTokenId++;
-            emit AssetMinted(msg.sender, newTokenId, _args);
+            _safeMint(msg.sender, newTokenId);
+            tokenIds[i] = newTokenId;
         }
-        if (_nftPrice != usdPrice) {
-            revert PriceChanged();
+
+        if (_tokenAmount == 0) {
+            revert InvalidTokenAmount();
         }
+        emit BundleMinted(tokenIds, _args);
     }
 
     /******************** UTILS ********************/
@@ -166,11 +182,12 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     function _transfer(
         address _from,
         uint256 _amount,
-        address _payToken
+        address _payToken,
+        uint256 _nftPrice
     ) internal {
         if (_payToken == address(0)) {
             (, int256 answer, , , ) = bnbUSDFeed.latestRoundData();
-            uint256 bnbPrice = ((usdPrice * _amount) / uint256(answer));
+            uint256 bnbPrice = ((_nftPrice * _amount) / uint256(answer));
             if (msg.value < bnbPrice) {
                 revert NotEnoughValue();
             }
@@ -191,19 +208,18 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
             IERC20(_payToken).safeTransferFrom(
                 _from,
                 liquidityReceiver,
-                ((liquiditySharePercentage * usdPrice) / 100) * _amount
+                ((liquiditySharePercentage * _nftPrice) / 100) * _amount
             );
             IERC20(_payToken).safeTransferFrom(
                 _from,
                 dao,
-                ((daoSharePercentage * usdPrice) / 100) * _amount
+                ((daoSharePercentage * _nftPrice) / 100) * _amount
             );
         }
     }
 
     /******************** VIEW FUNCTIONS ********************/
 
-    //TODO: Is that needed
     function getAllTokensByOwner(
         address account
     ) external view returns (uint256[] memory) {
@@ -254,13 +270,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     ) external validAddress(_newPriceFeed) {
         bnbUSDFeed = AggregatorV3Interface(_newPriceFeed);
         emit PriceFeedUpdated(_newPriceFeed);
-    }
-
-    event NewNFTPriceSet(uint256 newPrice);
-
-    function setUsdPrice(uint256 _newPrice) external {
-        usdPrice = _newPrice;
-        emit NewNFTPriceSet(_newPrice);
     }
 
     event NewReceiversSet(address newDao, address liquidity);

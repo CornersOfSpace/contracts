@@ -59,7 +59,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
 
     before(async () => {
       [deployer, hacker, user, ultimateAdmin] = await ethers.getSigners();
-      nft = await (
+      nft = (await (
         await ethers.getContractFactory("CornersOfSpace")
       ).deploy(
         deployer.address,
@@ -70,11 +70,11 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         "Corners of Space",
         "CoS",
         "uri"
-      );
+      )) as CornersOfSpace;
       paymentToken = await (
         await ethers.getContractFactory("TERC20")
       ).deploy("TERC20", "TERC20", 100);
-    });
+    }) as TERC20;
 
     it("should let mint tokens correctly", async () => {
       await nft
