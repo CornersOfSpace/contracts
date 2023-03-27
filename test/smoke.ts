@@ -2,6 +2,8 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber } from "ethers";
+import { CornersOfSpace } from "../typechain-types/contracts/CornersOfSpace";
+import { TERC20 } from "../typechain-types/contracts/helpers/TERC20";
 
 // import { advanceBlockTo, advanceTimeAndBlock } from "./utils/timeMethods";
 
@@ -70,11 +72,14 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         "Corners of Space",
         "CoS",
         "uri"
-      )) as unknown as CornersOfSpace;
-      paymentToken = await (
+      )) as CornersOfSpace;
+      await nft.deployed();
+
+      paymentToken = (await (
         await ethers.getContractFactory("TERC20")
-      ).deploy("TERC20", "TERC20", 100);
-    }) as unknown as TERC20;
+      ).deploy("TERC20", "TERC20", 100)) as unknown as TERC20;
+      await paymentToken.deployed();
+    });
 
     it("should let mint tokens correctly", async () => {
       await nft

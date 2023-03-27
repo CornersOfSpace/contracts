@@ -5,6 +5,7 @@ import "@nomicfoundation/hardhat-toolbox";
 import "@nomiclabs/hardhat-etherscan";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@nomiclabs/hardhat-ethers";
+import "hardhat-abi-exporter";
 import "@typechain/hardhat";
 import "hardhat-gas-reporter";
 import "hardhat-deploy";
@@ -34,6 +35,14 @@ const config: HardhatUserConfig = {
   gasReporter: {
     enabled: true,
     currency: "USD",
+  },
+
+  abiExporter: {
+    path: "./dist",
+    runOnCompile: true,
+    clear: true,
+    flat: true,
+    pretty: false,
   },
 
   etherscan: {
