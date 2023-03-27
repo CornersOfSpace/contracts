@@ -8,18 +8,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@1inch/solidity-utils/contracts/libraries/ECDSA.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-error ZeroAmount();
 error InvalidPercentages();
-error ZeroCount();
 error InvalidAddress();
 error UnauthorisedTx();
 error InvalidNonce();
-error PriceNotSet();
-error MintLimitted();
 error NotEnoughValue();
-error NotTokenOwner();
 error ValueTransferFailed();
-error RaceFailed();
 error PriceChanged();
 
 contract CornersOfSpace is ERC721Enumerable, AccessControl {
