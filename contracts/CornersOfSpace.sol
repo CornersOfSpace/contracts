@@ -16,6 +16,7 @@ error NotEnoughValue();
 error ValueTransferFailed();
 error PriceChanged();
 error InvalidTokenAmount();
+error SigExpired();
 
 contract CornersOfSpace is ERC721Enumerable, AccessControl {
     using SafeERC20 for IERC20;
@@ -97,6 +98,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         string calldata _args // 20 symbols max
     ) public payable {
         _handleNonce(_nonce);
+        if (_blockDeadline < block.number) {
+            revert SigExpired();
+        }
 
         bytes32 message = prefixed(
             keccak256(
@@ -135,6 +139,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         string calldata _args, // 20 symbols max
         uint256 _tokenAmount
     ) external payable {
+        if (_blockDeadline < block.number) {
+            revert SigExpired();
+        }
         _handleNonce(_nonce);
 
         bytes32 message = prefixed(
@@ -156,7 +163,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         if (!_free) {
             _transfer(msg.sender, _tokenAmount, _payToken, _nftPrice);
         }
-        uint256[] memory tokenIds;
+        uint256[] memory tokenIds = new uint256[](_tokenAmount);
         for (uint i; i < _tokenAmount; i++) {
             uint256 newTokenId = _currentTokenId + 1;
             _currentTokenId++;
@@ -305,11 +312,8 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         emit NewSharesSet(_liquidityShare, _daoShare);
     }
 
-    event NewBaseURISet(string newURI);
-
     function setBaseURI(string memory _newURI) public onlyRole(ADMIN) {
         baseURI = _newURI;
-        emit NewBaseURISet(_newURI);
     }
 
     function withdrawOwner(address _token) public onlyRole(ADMIN) {

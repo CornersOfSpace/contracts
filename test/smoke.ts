@@ -2,21 +2,21 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber } from "ethers";
-import { CornersOfSpace, TERC20 } from "../typechain-types";
 
 // import { advanceBlockTo, advanceTimeAndBlock } from "./utils/timeMethods";
 
 const args = "This is 20 symbols!!";
 const getMessage = async (
   signer: SignerWithAddress,
+  minter: SignerWithAddress,
   free: boolean,
   price: BigNumber,
   nonce: number
 ) => {
   const message = ethers.utils.keccak256(
     ethers.utils.solidityPack(
-      ["bool", "uint256", "uint256", "string"],
-      [free, price, nonce, args]
+      ["address", "bool", "uint256", "uint256", "uint64", "string"],
+      [minter.address, free, price, nonce, 1000000, args]
     )
   );
 
@@ -28,6 +28,7 @@ const getMessage = async (
 
 const getBundleMessage = async (
   signer: SignerWithAddress,
+  minter: SignerWithAddress,
   free: boolean,
   price: BigNumber,
   nonce: number,
@@ -35,8 +36,8 @@ const getBundleMessage = async (
 ) => {
   const message = ethers.utils.keccak256(
     ethers.utils.solidityPack(
-      ["bool", "uint256", "uint256", "string", "uint256"],
-      [free, price, nonce, args, amount]
+      ["address", "bool", "uint256", "uint256", "uint64", "string", "uint256"],
+      [minter.address, free, price, nonce, 1000000, args, amount]
     )
   );
 
@@ -66,15 +67,14 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         ultimateAdmin.address,
         deployer.address,
         ethers.constants.AddressZero,
-        price,
         "Corners of Space",
         "CoS",
         "uri"
-      )) as CornersOfSpace;
+      )) as unknown as CornersOfSpace;
       paymentToken = await (
         await ethers.getContractFactory("TERC20")
       ).deploy("TERC20", "TERC20", 100);
-    }) as TERC20;
+    }) as unknown as TERC20;
 
     it("should let mint tokens correctly", async () => {
       await nft
@@ -84,7 +84,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
           paymentToken.address,
           price,
           nonce,
-          await getMessage(deployer, true, price, nonce),
+          "1000000",
+          await getMessage(deployer, user, true, price, nonce),
           args
         );
       nonce++;
@@ -100,7 +101,15 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
           paymentToken.address,
           price,
           nonce,
-          await getBundleMessage(deployer, true, price, nonce, amountToMint),
+          "1000000",
+          await getBundleMessage(
+            deployer,
+            user,
+            true,
+            price,
+            nonce,
+            amountToMint
+          ),
           args,
           amountToMint
         );
