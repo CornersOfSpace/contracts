@@ -10,7 +10,7 @@ import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 error InvalidPercentages();
 error InvalidAddress();
-error UnauthorisedTx();
+error UnauthorizedTx();
 error InvalidNonce();
 error NotEnoughValue();
 error ValueTransferFailed();
@@ -21,21 +21,21 @@ error SigExpired();
 contract CornersOfSpace is ERC721Enumerable, AccessControl {
     using SafeERC20 for IERC20;
     // Token Address -> isEligible: true for eligible; false for inelgibile
-    mapping(address => bool) eligibleTokens;
+    mapping(address => bool) public eligibleTokens;
 
     // Wallet that receives liquidity before sending them to dex, to support erc20 token
-    address private liquidityReceiver;
+    address public liquidityReceiver;
     // DAO wallet
-    address private dao;
+    address public dao;
 
     // ChainLink USD-BNB price feed
-    AggregatorV3Interface bnbUSDFeed;
+    AggregatorV3Interface public bnbUSDFeed;
 
     //TODO: Discuss if other roles are needed
     bytes32 internal constant ADMIN = keccak256("ADMIN");
     bytes32 internal constant ULTIMATE_ADMIN = keccak256("ULTIMATE_ADMIN");
     // DAO application backend
-    address private verifier;
+    address public verifier;
 
     uint256 private _currentTokenId;
     string private baseURI;
@@ -43,7 +43,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     uint256 public daoSharePercentage; // 0-100 value
     uint256 public liquiditySharePercentage; // 0-100 value
 
-    mapping(uint256 => bool) private usedNonces;
+    mapping(uint256 => bool) public usedNonces;
 
     /******************** EVENTS ********************/
 
@@ -88,6 +88,23 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     }
 
     /******************** MINTING FUNCTIONS ********************/
+    /**
+    @dev primary function to mint one NFT; NFT minting is tied to a pseudo-random rarity "raffle"
+    that happens offchain. Therefore, during function execution it's checked if application registered
+    user's attempt to mint an NFT using signer recovery. ECDSA functions developer by 1inch.
+    Payment for the NFT is set offchain and during function execution checked in the signature.
+    Payment is distributed between 2 or 3 receivers: Liquidity receiver, DAO and referral.
+    Referral transfer is happening only if _referral param passed as non-address(0)
+    Signature is valid until blockDeadline param, and assigned nonce can be used only once
+    
+    @param _free lets users mint NFTs for free if passed as 'true'
+    @param _payToken payment token address
+    @param _nonce unique value assigned for minting
+    @param _blockDeadline block number after which tx execution will be rewerted
+    @param _sig signature signed by verifier
+    @param _args string param, that helps with indexation. Should not exceed 20 symbols
+    @param _referral referral address to receive 5% payment value. Pass address(0) to indicate that there is no referall
+     */
     function mint(
         bool _free,
         address _payToken,
@@ -95,7 +112,8 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         uint256 _nonce,
         uint64 _blockDeadline,
         bytes calldata _sig,
-        string calldata _args // 20 symbols max
+        string calldata _args,
+        address _referral
     ) public payable {
         _handleNonce(_nonce);
         if (_blockDeadline < block.number) {
@@ -108,18 +126,24 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
                     msg.sender,
                     _free,
                     _nftPrice,
+                    _payToken,
                     _nonce,
                     _blockDeadline,
-                    _args
+                    _args,
+                    _referral
                 )
             )
         );
         if (ECDSA.recover(message, _sig) != verifier) {
-            revert UnauthorisedTx();
+            revert UnauthorizedTx();
         }
 
         if (!_free) {
-            _transfer(msg.sender, 1, _payToken, _nftPrice);
+            if (_referral == address(0)) {
+                _transfer(1, _payToken, _nftPrice);
+            } else {
+                _transferWithReferral(1, _payToken, _nftPrice, _referral);
+            }
         }
 
         uint256 newTokenId = _currentTokenId + 1;
@@ -129,6 +153,23 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         emit AssetMinted(newTokenId, _args);
     }
 
+    /**    
+    @dev primary function to mint _tokenAmount amount of NFT; NFT minting is tied to a pseudo-random rarity "raffle"
+    that happens offchain. Therefore, during function execution it's checked if application registered
+    user's attempt to mint an NFT using signer recovery. ECDSA functions developer by 1inch.
+    Payment for the NFT is set offchain and during function execution checked in the signature.
+    Payment is distributed between 2 or 3 receivers: Liquidity receiver, DAO and referral.
+    Referral transfer is happening only if _referral param passed as non-address(0)
+    Signature is valid until blockDeadline param, and assigned nonce can be used only once
+    
+    @param _free lets users mint NFTs for free if passed as 'true'
+    @param _payToken payment token address
+    @param _nonce unique value assigned for minting
+    @param _blockDeadline block number after which tx execution will be rewerted
+    @param _sig signature signed by verifier
+    @param _args string param, that helps with indexation. Should not exceed 20 symbols
+    @param _tokenAmount amount of tokens to be minted. Shouldn't be more then 11, otherwise might not get mined
+    @param _referral referral address to receive 5% payment value. Pass address(0) to indicate that there is no referall */
     function bundleMint(
         bool _free,
         address _payToken,
@@ -137,12 +178,13 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         uint64 _blockDeadline,
         bytes calldata _sig,
         string calldata _args, // 20 symbols max
-        uint256 _tokenAmount
+        uint256 _tokenAmount,
+        address _referral
     ) external payable {
+        _handleNonce(_nonce);
         if (_blockDeadline < block.number) {
             revert SigExpired();
         }
-        _handleNonce(_nonce);
 
         bytes32 message = prefixed(
             keccak256(
@@ -150,18 +192,24 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
                     msg.sender,
                     _free,
                     _nftPrice,
+                    _payToken,
                     _nonce,
                     _blockDeadline,
                     _args,
-                    _tokenAmount
+                    _tokenAmount,
+                    _referral
                 )
             )
         );
         if (ECDSA.recover(message, _sig) != verifier) {
-            revert UnauthorisedTx();
+            revert UnauthorizedTx();
         }
         if (!_free) {
-            _transfer(msg.sender, _tokenAmount, _payToken, _nftPrice);
+            if (_referral == address(0)) {
+                _transfer(1, _payToken, _nftPrice);
+            } else {
+                _transferWithReferral(1, _payToken, _nftPrice, _referral);
+            }
         }
         uint256[] memory tokenIds = new uint256[](_tokenAmount);
         for (uint i; i < _tokenAmount; i++) {
@@ -187,7 +235,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     }
 
     function _transfer(
-        address _from,
         uint256 _amount,
         address _payToken,
         uint256 _nftPrice
@@ -213,14 +260,67 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
             }
         } else {
             IERC20(_payToken).safeTransferFrom(
-                _from,
+                msg.sender,
                 liquidityReceiver,
                 ((liquiditySharePercentage * _nftPrice) / 100) * _amount
             );
             IERC20(_payToken).safeTransferFrom(
-                _from,
+                msg.sender,
                 dao,
                 ((daoSharePercentage * _nftPrice) / 100) * _amount
+            );
+        }
+    }
+
+    function _transferWithReferral(
+        uint256 _amount,
+        address _payToken,
+        uint256 _nftPrice,
+        address _referral
+    ) internal {
+        if (_payToken == address(0)) {
+            (, int256 answer, , , ) = bnbUSDFeed.latestRoundData();
+            uint256 bnbPrice = ((_nftPrice * _amount) / uint256(answer));
+            if (msg.value < bnbPrice) {
+                revert NotEnoughValue();
+            }
+            require(msg.value >= _amount, "not enough value");
+            (bool success, ) = payable(dao).call{
+                value: (bnbPrice * daoSharePercentage) / 100
+            }("");
+            if (!success) {
+                revert ValueTransferFailed();
+            }
+            (bool liquiditySuccess, ) = payable(liquidityReceiver).call{
+                value: (bnbPrice * (liquiditySharePercentage - 5)) / 100
+            }("");
+            if (!liquiditySuccess) {
+                revert ValueTransferFailed();
+            }
+            (bool referralSuccess, ) = payable(_referral).call{
+                value: (bnbPrice * 5) / 100
+            }("");
+            if (!referralSuccess) {
+                revert ValueTransferFailed();
+            }
+        } else {
+            if (liquiditySharePercentage >= 5) {
+                IERC20(_payToken).safeTransferFrom(
+                    msg.sender,
+                    liquidityReceiver,
+                    (((liquiditySharePercentage - 5) * _nftPrice) / 100) *
+                        _amount
+                );
+            }
+            IERC20(_payToken).safeTransferFrom(
+                msg.sender,
+                dao,
+                ((daoSharePercentage * _nftPrice) / 100) * _amount
+            );
+            IERC20(_payToken).safeTransferFrom(
+                msg.sender,
+                _referral,
+                ((5 * _nftPrice) / 100) * _amount
             );
         }
     }
@@ -272,15 +372,21 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
 
     event PriceFeedUpdated(address newPriceFeed);
 
+    /**
+    @dev updates address of bnb oracle
+     */
     function updatePriceFeed(
         address _newPriceFeed
-    ) external validAddress(_newPriceFeed) {
+    ) external validAddress(_newPriceFeed) onlyRole(ADMIN) {
         bnbUSDFeed = AggregatorV3Interface(_newPriceFeed);
         emit PriceFeedUpdated(_newPriceFeed);
     }
 
     event NewReceiversSet(address newDao, address liquidity);
 
+    /**
+    @dev updates addresses of mint payments receivers
+     */
     function setReceivers(
         address _dao,
         address _liquidity
@@ -292,6 +398,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
 
     event PayTokenStatusUpdated(address payToken, bool status);
 
+    /**
+    @dev updates token status. Tokens with status "true" can be used as payment tokens durin minting functions
+     */
     function setPayTokenStatus(
         address _payToken,
         bool _status
@@ -302,7 +411,13 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
 
     event NewSharesSet(uint256 newLiquidityShare, uint256 newDaoShare);
 
-    function setShare(uint256 _liquidityShare, uint256 _daoShare) external {
+    /**
+    @dev updates payment split percentages
+     */
+    function setShare(
+        uint256 _liquidityShare,
+        uint256 _daoShare
+    ) external onlyRole(ADMIN) {
         if (_liquidityShare + _daoShare != 100) {
             revert InvalidPercentages();
         }
@@ -312,10 +427,17 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         emit NewSharesSet(_liquidityShare, _daoShare);
     }
 
+    event BaseURISet(string newURI);
+
     function setBaseURI(string memory _newURI) public onlyRole(ADMIN) {
         baseURI = _newURI;
+
+        emit BaseURISet(_newURI);
     }
 
+    /**
+    @dev let's ADMIN to withdraw any kind of token including both native and ERC20 tokens
+     */
     function withdrawOwner(address _token) public onlyRole(ADMIN) {
         if (_token == address(0)) {
             (bool liquiditySuccess, ) = payable(msg.sender).call{
@@ -334,6 +456,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
 
     event NewVerifierSet(address verifier);
 
+    /**
+    @dev sets address of the wallet that signs a message required in mint() and bundleMint()
+     */
     function setVerifier(
         address _verifier
     ) external onlyRole(ADMIN) validAddress(_verifier) {

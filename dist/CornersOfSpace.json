@@ -72,7 +72,7 @@
   },
   {
     "inputs": [],
-    "name": "UnauthorisedTx",
+    "name": "UnauthorizedTx",
     "type": "error"
   },
   {
@@ -147,6 +147,19 @@
       }
     ],
     "name": "AssetMinted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "newURI",
+        "type": "string"
+      }
+    ],
+    "name": "BaseURISet",
     "type": "event"
   },
   {
@@ -402,6 +415,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "bnbUSDFeed",
+    "outputs": [
+      {
+        "internalType": "contract AggregatorV3Interface",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "bool",
@@ -442,11 +468,29 @@
         "internalType": "uint256",
         "name": "_tokenAmount",
         "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "_referral",
+        "type": "address"
       }
     ],
     "name": "bundleMint",
     "outputs": [],
     "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "dao",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -457,6 +501,25 @@
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "eligibleTokens",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -587,6 +650,19 @@
   },
   {
     "inputs": [],
+    "name": "liquidityReceiver",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "liquiditySharePercentage",
     "outputs": [
       {
@@ -634,6 +710,11 @@
         "internalType": "string",
         "name": "_args",
         "type": "string"
+      },
+      {
+        "internalType": "address",
+        "name": "_referral",
+        "type": "address"
       }
     ],
     "name": "mint",
@@ -999,6 +1080,19 @@
     "name": "updatePriceFeed",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "verifier",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

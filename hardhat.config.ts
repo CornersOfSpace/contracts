@@ -5,6 +5,7 @@ import "@nomicfoundation/hardhat-toolbox";
 import "@nomiclabs/hardhat-etherscan";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@nomiclabs/hardhat-ethers";
+import "solidity-coverage";
 import "hardhat-abi-exporter";
 import "@typechain/hardhat";
 import "hardhat-gas-reporter";
@@ -20,7 +21,10 @@ const accounts =
     : [];
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.17",
+  solidity: {
+    version: "0.8.17",
+    settings: { optimizer: { enabled: true, runs: 200 } },
+  },
 
   networks: {
     bscMainnet: {
@@ -35,6 +39,9 @@ const config: HardhatUserConfig = {
   gasReporter: {
     enabled: true,
     currency: "USD",
+    coinmarketcap: "b8a99b0e-9fce-4836-8465-8adb0408995f",
+    token: "BNB",
+    gasPriceApi: "https://api.bscscan.com/api?module=proxy&action=eth_gasPrice",
   },
 
   abiExporter: {
