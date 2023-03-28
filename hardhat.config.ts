@@ -39,7 +39,7 @@ const config: HardhatUserConfig = {
   gasReporter: {
     enabled: true,
     currency: "USD",
-    coinmarketcap: "b8a99b0e-9fce-4836-8465-8adb0408995f",
+    coinmarketcap: `${process.env.COINMARKETCAP_API}`,
     token: "BNB",
     gasPriceApi: "https://api.bscscan.com/api?module=proxy&action=eth_gasPrice",
   },
