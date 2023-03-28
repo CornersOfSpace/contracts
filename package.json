@@ -1,5 +1,5 @@
 {
-  "name": "hardhat-project",
+  "name": "corners-of-space",
   "version": "0.0.1",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^2.0.2",
