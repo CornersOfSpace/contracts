@@ -31,7 +31,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     // ChainLink USD-BNB price feed
     AggregatorV3Interface public bnbUSDFeed;
 
-    //TODO: Discuss if other roles are needed
     bytes32 internal constant ADMIN = keccak256("ADMIN");
     bytes32 internal constant ULTIMATE_ADMIN = keccak256("ULTIMATE_ADMIN");
     // DAO application backend
