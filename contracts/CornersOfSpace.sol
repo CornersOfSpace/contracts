@@ -71,19 +71,8 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
 
     /******************** BASE ERC721 OVERRIDE FUNCTIONS ********************/
 
-    function tokenURI(
-        uint256 tokenId
-    ) public view virtual override returns (string memory) {
-        require(
-            _exists(tokenId),
-            // Keeping default error to ensure consistency and avoid frontend bugs
-            "ERC721Metadata: URI query for nonexistent token"
-        );
-
-        return
-            bytes(baseURI).length > 0
-                ? string(abi.encodePacked(baseURI, tokenId))
-                : "";
+    function _baseURI() internal view virtual override returns (string memory) {
+        return baseURI;
     }
 
     /******************** MINTING FUNCTIONS ********************/
@@ -205,9 +194,14 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         }
         if (!_free) {
             if (_referral == address(0)) {
-                _transfer(1, _payToken, _nftPrice);
+                _transfer(_tokenAmount, _payToken, _nftPrice);
             } else {
-                _transferWithReferral(1, _payToken, _nftPrice, _referral);
+                _transferWithReferral(
+                    _tokenAmount,
+                    _payToken,
+                    _nftPrice,
+                    _referral
+                );
             }
         }
         uint256[] memory tokenIds = new uint256[](_tokenAmount);

@@ -63,7 +63,8 @@ const getBundleMessage = async (
   payToken: string,
   nonce: number,
   amount: number,
-  sigDeadline: number | BigNumber
+  sigDeadline: number | BigNumber,
+  referral: string
 ) => {
   const message = ethers.utils.keccak256(
     ethers.utils.solidityPack(
@@ -87,7 +88,7 @@ const getBundleMessage = async (
         sigDeadline,
         args,
         amount,
-        ethers.constants.AddressZero,
+        referral,
       ]
     )
   );
@@ -126,7 +127,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         priceFeed.address,
         "Corners of Space",
         "CoS",
-        "uri"
+        "uri/"
       )) as CornersOfSpace;
       await nft.deployed();
 
@@ -183,6 +184,11 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       );
     });
 
+    it("should block nonce after minting", async () => {
+      expect(await nft.usedNonces(0)).to.be.equal(true);
+      expect(await nft.usedNonces(1)).to.be.equal(false);
+    });
+
     it("should transfer native token payment correctly", async () => {
       const deadline = await getSigDeadline();
       const value = price;
@@ -223,6 +229,24 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       expect(daoBalanceAfter.sub(daoBalanceBefore)).to.be.equal(
         price.div(300).mul(daoShare).div(100)
       );
+    });
+    it("should correctly return all tokens by owner", async () => {
+      const allToken = [BigNumber.from(1), BigNumber.from(2)];
+
+      expect(
+        (await nft.getAllTokensByOwner(user.address))[0].eq(allToken[0])
+      ).to.be.equal(true);
+      expect(
+        (await nft.getAllTokensByOwner(user.address))[1].eq(allToken[1])
+      ).to.be.equal(true);
+      expect((await nft.getAllTokensByOwner(user.address)).length).to.be.equal(
+        2
+      );
+    });
+
+    it("should return supports interface", async () => {
+      //erc721
+      expect(await nft.supportsInterface("0x80ac58cd")).to.be.equal(true);
     });
 
     it("should not let mint for native token if value isn't enough", async () => {
@@ -481,7 +505,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             paymentToken.address,
             nonce,
             amountToMint,
-            deadline
+            deadline,
+            ethers.constants.AddressZero
           ),
           args,
           amountToMint,
@@ -516,7 +541,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             paymentToken.address,
             nonce,
             amountToMint,
-            deadline
+            deadline,
+            ethers.constants.AddressZero
           ),
           args,
           amountToMint,
@@ -531,10 +557,316 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       );
 
       expect(balanceAfter.sub(balanceBefore)).to.be.equal(
-        price.mul(liquidityShare).div(100)
+        price.mul(liquidityShare).div(100).mul(amountToMint)
       );
       expect(daoBalanceAfter.sub(daoBalanceBefore)).to.be.equal(
-        price.mul(daoShare).div(100)
+        price.mul(daoShare).div(100).mul(amountToMint)
+      );
+    });
+
+    it("should let mint tokens in bundles and transfer native token payment correctly with referral", async () => {
+      const deadline = await getSigDeadline();
+      const amount = 10;
+      const balanceBefore = await deployer.getBalance();
+      const daoBalanceBefore = await ultimateAdmin.getBalance();
+      const referralBalanceBefore = await hacker.getBalance();
+
+      await nft
+        .connect(user)
+        .bundleMint(
+          false,
+          ethers.constants.AddressZero,
+          price,
+          nonce,
+          deadline,
+          await getBundleMessage(
+            deployer,
+            user,
+            false,
+            price,
+            ethers.constants.AddressZero,
+            nonce,
+            amount,
+            deadline,
+            hacker.address
+          ),
+          args,
+          amount,
+          hacker.address,
+          { value: price }
+        );
+      nonce++;
+      const balanceAfter = await deployer.getBalance();
+      const daoBalanceAfter = await ultimateAdmin.getBalance();
+      const referralBalanceAfter = await hacker.getBalance();
+
+      expect(await nft.ownerOf(18)).to.equal(user.address);
+      expect(await nft.ownerOf(27)).to.equal(user.address);
+      expect(balanceAfter.sub(balanceBefore)).to.be.equal(
+        price
+          .mul(10)
+          .div(300)
+          .mul(liquidityShare - 5)
+          .div(100)
+      );
+      expect(daoBalanceAfter.sub(daoBalanceBefore)).to.be.equal(
+        price.mul(10).div(300).mul(daoShare).div(100)
+      );
+      expect(referralBalanceAfter.sub(referralBalanceBefore)).to.be.equal(
+        price.mul(10).div(300).mul(5).div(100)
+      );
+    });
+
+    it("should let mint tokens in bundles and transfer native token payment correctly without a referral", async () => {
+      const deadline = await getSigDeadline();
+      const amount = 10;
+      const balanceBefore = await deployer.getBalance();
+      const daoBalanceBefore = await ultimateAdmin.getBalance();
+      const referralBalanceBefore = await hacker.getBalance();
+
+      await nft
+        .connect(user)
+        .bundleMint(
+          false,
+          ethers.constants.AddressZero,
+          price,
+          nonce,
+          deadline,
+          await getBundleMessage(
+            deployer,
+            user,
+            false,
+            price,
+            ethers.constants.AddressZero,
+            nonce,
+            amount,
+            deadline,
+            ethers.constants.AddressZero
+          ),
+          args,
+          amount,
+          ethers.constants.AddressZero,
+          { value: price }
+        );
+      nonce++;
+      const balanceAfter = await deployer.getBalance();
+      const daoBalanceAfter = await ultimateAdmin.getBalance();
+      const referralBalanceAfter = await hacker.getBalance();
+
+      expect(await nft.ownerOf(18)).to.equal(user.address);
+      expect(await nft.ownerOf(27)).to.equal(user.address);
+      expect(balanceAfter.sub(balanceBefore)).to.be.equal(
+        price.mul(10).div(300).mul(liquidityShare).div(100)
+      );
+      expect(daoBalanceAfter.sub(daoBalanceBefore)).to.be.equal(
+        price.mul(10).div(300).mul(daoShare).div(100)
+      );
+      expect(referralBalanceAfter.sub(referralBalanceBefore)).to.be.equal(0);
+    });
+
+    it("should not let mint bundle of 0 tokens", async () => {
+      const deadline = await getSigDeadline();
+      const amount = 0;
+      const balanceBefore = await deployer.getBalance();
+      const daoBalanceBefore = await ultimateAdmin.getBalance();
+      const referralBalanceBefore = await hacker.getBalance();
+
+      await expect(
+        nft
+          .connect(user)
+          .bundleMint(
+            false,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getBundleMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              amount,
+              deadline,
+              hacker.address
+            ),
+            args,
+            amount,
+            hacker.address,
+            { value: price }
+          )
+      ).to.be.revertedWithCustomError(nft, "InvalidTokenAmount");
+    });
+
+    it("should return tokenURI", async () => {
+      expect(await nft.tokenURI(1)).to.be.equal("uri/1");
+    });
+
+    it("should return percentages from fields", async () => {
+      expect(await nft.daoSharePercentage()).to.be.equal(5);
+      expect(await nft.liquiditySharePercentage()).to.be.equal(95);
+    });
+
+    it("should let bundles for free", async () => {
+      const deadline = await getSigDeadline();
+      const amount = 10;
+      const balanceBefore = await deployer.getBalance();
+      const daoBalanceBefore = await ultimateAdmin.getBalance();
+      const referralBalanceBefore = await hacker.getBalance();
+
+      await expect(
+        nft
+          .connect(user)
+          .bundleMint(
+            true,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getBundleMessage(
+              deployer,
+              user,
+              true,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              amount,
+              deadline,
+              hacker.address
+            ),
+            args,
+            amount,
+            hacker.address,
+            { value: 0 }
+          )
+      ).not.to.be.reverted;
+      nonce++;
+    });
+    it("should not let mint bundles with wrong signature", async () => {
+      const deadline = await getSigDeadline();
+      const amount = 10;
+      const balanceBefore = await deployer.getBalance();
+      const daoBalanceBefore = await ultimateAdmin.getBalance();
+      const referralBalanceBefore = await hacker.getBalance();
+
+      await expect(
+        nft
+          .connect(user)
+          .bundleMint(
+            true,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getBundleMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              amount,
+              deadline,
+              hacker.address
+            ),
+            args,
+            amount,
+            hacker.address,
+            { value: 0 }
+          )
+      ).to.be.revertedWithCustomError(nft, "UnauthorizedTx");
+      nonce++;
+    });
+    it("should not let mint bundles if deadline has passed", async () => {
+      const deadline = await getSigDeadline();
+      const amount = 10;
+
+      await advanceBlock(1000);
+
+      await expect(
+        nft
+          .connect(user)
+          .bundleMint(
+            true,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getBundleMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              amount,
+              deadline,
+              hacker.address
+            ),
+            args,
+            amount,
+            hacker.address,
+            { value: 0 }
+          )
+      ).to.be.revertedWithCustomError(nft, "SigExpired");
+      nonce++;
+    });
+
+    it("should let admin call withdrawOwner", async () => {
+      await expect(nft.withdrawOwner(ethers.constants.AddressZero)).to.not.be
+        .reverted;
+    });
+    it("withdrawOwner should transfer whole balances to the owner", async () => {
+      const deadline = await getSigDeadline();
+      await nft
+        .connect(user)
+        .mint(
+          false,
+          ethers.constants.AddressZero,
+          price,
+          nonce,
+          deadline,
+          await getMessage(
+            deployer,
+            user,
+            false,
+            price,
+            ethers.constants.AddressZero,
+            nonce,
+            deadline
+          ),
+          args,
+          ethers.constants.AddressZero,
+          { value: price.div(300).add(ethers.utils.parseEther("1.5")).sub(1) }
+        );
+      await paymentToken
+        .connect(user)
+        .transfer(nft.address, ethers.utils.parseEther("1.5"));
+
+      const contractERC20BalanceBefore = await paymentToken.balanceOf(
+        nft.address
+      );
+      const contractEthBalanceBefore = await ethers.provider.getBalance(
+        nft.address
+      );
+      await nft.withdrawOwner(ethers.constants.AddressZero);
+      await nft.withdrawOwner(paymentToken.address);
+
+      const contractERC20BalanceAfter = await paymentToken.balanceOf(
+        nft.address
+      );
+      const contractEthBalanceAfter = await ethers.provider.getBalance(
+        nft.address
+      );
+
+      expect(contractERC20BalanceAfter).to.be.equal(0);
+      expect(contractERC20BalanceBefore).to.be.equal(
+        ethers.utils.parseEther("1.5")
+      );
+      expect(contractEthBalanceAfter).to.be.equal(0);
+      expect(contractEthBalanceBefore).to.be.equal(
+        ethers.utils.parseEther("1.5")
       );
     });
     it("should not let non-admin call updatePriceFeed", async () => {
@@ -545,6 +877,11 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       await nft.updatePriceFeed(hacker.address);
 
       expect(await nft.bnbUSDFeed()).to.be.equal(hacker.address);
+    });
+    it("should not set address 0 for updatePriceFeed", async () => {
+      await expect(
+        nft.updatePriceFeed(ethers.constants.AddressZero)
+      ).to.be.revertedWithCustomError(nft, "InvalidAddress");
     });
     it("should not let non-admin call setReceiver", async () => {
       await expect(
@@ -572,11 +909,18 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
     it("should not let non-admin call setShare", async () => {
       await expect(nft.connect(hacker).setShare(100, 0)).to.be.reverted;
     });
-    it("should set new value with setShare", async () => {
+    it("should set let update token status", async () => {
       await nft.setPayTokenStatus(hacker.address, true);
 
       expect(await nft.eligibleTokens(hacker.address)).to.be.equal(true);
     });
+    it("should not let set shares with incorrect ratios", async () => {
+      await expect(nft.setShare(94, 5)).to.be.revertedWithCustomError(
+        nft,
+        "InvalidPercentages"
+      );
+    });
+
     it("should not let non-admin call setBaseURI", async () => {
       await expect(nft.connect(hacker).setBaseURI("YOINK")).to.be.reverted;
     });
@@ -585,10 +929,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         nft.connect(hacker).withdrawOwner(ethers.constants.AddressZero)
       ).to.be.reverted;
     });
-    it("should let admin call withdrawOwner", async () => {
-      await expect(nft.withdrawOwner(ethers.constants.AddressZero)).to.not.be
-        .reverted;
-    });
+
     it("should not let non-admin call setVerifier", async () => {
       await expect(nft.connect(hacker).setVerifier(hacker.address)).to.be
         .reverted;
@@ -596,6 +937,11 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
     it("should let admin set setVerifier", async () => {
       await nft.setVerifier(hacker.address);
       expect(await nft.verifier()).to.be.equal(hacker.address);
+    });
+    it("should not let set verifier for address 0 ", async () => {
+      await expect(
+        nft.setVerifier(ethers.constants.AddressZero)
+      ).to.be.revertedWithCustomError(nft, "InvalidAddress");
     });
   });
 });
