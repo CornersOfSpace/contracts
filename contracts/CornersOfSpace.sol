@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.8.17 <0.9.0;
+pragma solidity 0.8.19;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@1inch/solidity-utils/contracts/libraries/ECDSA.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import "hardhat/console.sol";
 
 error InvalidPercentages();
 error InvalidAddress();
@@ -14,13 +15,14 @@ error UnauthorizedTx();
 error InvalidNonce();
 error NotEnoughValue();
 error ValueTransferFailed();
-error PriceChanged();
 error InvalidTokenAmount();
 error SigExpired();
+error InaligiblePayToken();
+error ValueSent();
 
 contract CornersOfSpace is ERC721Enumerable, AccessControl {
     using SafeERC20 for IERC20;
-    // Token Address -> isEligible: true for eligible; false for inelgibile
+    // Token Address -> isEligible: true for eligible; false for ineligible
     mapping(address => bool) public eligibleTokens;
 
     // Wallet that receives liquidity before sending them to dex, to support erc20 token
@@ -34,7 +36,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     bytes32 internal constant ADMIN = keccak256("ADMIN");
     bytes32 internal constant ULTIMATE_ADMIN = keccak256("ULTIMATE_ADMIN");
     // DAO application backend
-    address public verifier;
+    address public authorizer;
 
     uint256 private _currentTokenId;
     string private baseURI;
@@ -42,31 +44,81 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     uint256 public daoSharePercentage; // 0-100 value
     uint256 public liquiditySharePercentage; // 0-100 value
 
+    uint256 constant PERCENTAGE_DENOMINATOR = 100;
+    uint256 constant REFFERAL_SHARE = 5;
+
+    bytes32 constant EIP712_DOMAIN_TYPEHASH =
+        keccak256(
+            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+        );
+
+    bytes32 constant MESSAGE_TYPEHASH =
+        keccak256(
+            "MessageType(address minter,bool free,uint256 price,address payToken,uint256 nonce,uint64 sigDeadline,string args,address referral)"
+        );
+
+    bytes32 public domainSeparator;
+
     mapping(uint256 => bool) public usedNonces;
+
+    mapping(address => uint256) public valueToReturn;
 
     /******************** EVENTS ********************/
 
-    event AssetMinted(uint256 _tokenId, string args);
-    event BundleMinted(uint256[] _tokenIds, string args);
+    event AssetMinted(uint256 _tokenId, string indexed args);
+    event BundleMinted(uint256[] _tokenIds, string indexed args);
+    event BaseURISet(string newURI);
+    event NewAuthorizerSet(address authorizer);
+    event NewReceiversSet(address newDao, address liquidity);
+    event PriceFeedUpdated(address newPriceFeed);
+    event PayTokenStatusUpdated(address payToken, bool status);
+    event NewSharesSet(uint256 newLiquidityShare, uint256 newDaoShare);
+
+    /******************** MODIFIERS ********************/
+
+    modifier validAddress(address _addr) {
+        if (_addr == address(0)) {
+            revert InvalidAddress();
+        }
+        _;
+    }
 
     /******************** CONSTRUCTOR ********************/
 
     constructor(
         address _admin,
         address _adminController,
-        address _verifier,
+        address _authorizer,
         AggregatorV3Interface _priceFeed,
         string memory _name,
         string memory _symbol,
         string memory _uri
     ) ERC721(_name, _symbol) {
-        _setupRole(ULTIMATE_ADMIN, _adminController);
+        _grantRole(ULTIMATE_ADMIN, _adminController);
         _setRoleAdmin(ADMIN, ULTIMATE_ADMIN);
-        _setupRole(ADMIN, _admin);
+        _grantRole(ADMIN, _admin);
+
+        if (_authorizer == address(0)) {
+            revert InvalidAddress();
+        }
 
         baseURI = _uri;
-        verifier = _verifier;
+        authorizer = _authorizer;
         bnbUSDFeed = _priceFeed;
+
+        domainSeparator = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes(_name)),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(this)
+            )
+        );
+
+        emit NewAuthorizerSet(_authorizer);
+        emit BaseURISet(_uri);
+        emit PriceFeedUpdated(address(_priceFeed));
     }
 
     /******************** BASE ERC721 OVERRIDE FUNCTIONS ********************/
@@ -89,7 +141,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     @param _payToken payment token address
     @param _nonce unique value assigned for minting
     @param _blockDeadline block number after which tx execution will be rewerted
-    @param _sig signature signed by verifier
+    @param _sig signature signed by authorizer
     @param _args string param, that helps with indexation. Should not exceed 20 symbols
     @param _referral referral address to receive 5% payment value. Pass address(0) to indicate that there is no referall
      */
@@ -102,15 +154,19 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         bytes calldata _sig,
         string calldata _args,
         address _referral
-    ) public payable {
+    ) external payable {
         _handleNonce(_nonce);
         if (_blockDeadline < block.number) {
             revert SigExpired();
         }
+        if (!eligibleTokens[_payToken]) {
+            revert InaligiblePayToken();
+        }
 
         bytes32 message = prefixed(
             keccak256(
-                abi.encodePacked(
+                abi.encode(
+                    MESSAGE_TYPEHASH,
                     msg.sender,
                     _free,
                     _nftPrice,
@@ -122,7 +178,8 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
                 )
             )
         );
-        if (ECDSA.recover(message, _sig) != verifier) {
+        console.logBytes32(message);
+        if (ECDSA.recover(message, _sig) != authorizer) {
             revert UnauthorizedTx();
         }
 
@@ -154,7 +211,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     @param _payToken payment token address
     @param _nonce unique value assigned for minting
     @param _blockDeadline block number after which tx execution will be rewerted
-    @param _sig signature signed by verifier
+    @param _sig signature signed by authorizer
     @param _args string param, that helps with indexation. Should not exceed 20 symbols
     @param _tokenAmount amount of tokens to be minted. Shouldn't be more then 11, otherwise might not get mined
     @param _referral referral address to receive 5% payment value. Pass address(0) to indicate that there is no referall */
@@ -173,10 +230,16 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         if (_blockDeadline < block.number) {
             revert SigExpired();
         }
+        if (!eligibleTokens[_payToken]) {
+            revert InaligiblePayToken();
+        }
+        if (_tokenAmount == 0) {
+            revert InvalidTokenAmount();
+        }
 
         bytes32 message = prefixed(
             keccak256(
-                abi.encodePacked(
+                abi.encode(
                     msg.sender,
                     _free,
                     _nftPrice,
@@ -189,7 +252,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
                 )
             )
         );
-        if (ECDSA.recover(message, _sig) != verifier) {
+        if (ECDSA.recover(message, _sig) != authorizer) {
             revert UnauthorizedTx();
         }
         if (!_free) {
@@ -205,17 +268,25 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
             }
         }
         uint256[] memory tokenIds = new uint256[](_tokenAmount);
+        uint256 currentTokenId = _currentTokenId;
         for (uint i; i < _tokenAmount; i++) {
-            uint256 newTokenId = _currentTokenId + 1;
-            _currentTokenId++;
+            uint256 newTokenId = currentTokenId + 1;
+            currentTokenId++;
             _safeMint(msg.sender, newTokenId);
             tokenIds[i] = newTokenId;
         }
+        _currentTokenId = currentTokenId;
 
-        if (_tokenAmount == 0) {
-            revert InvalidTokenAmount();
-        }
         emit BundleMinted(tokenIds, _args);
+    }
+
+    function claimRefund() external {
+        uint256 refundAmount = valueToReturn[msg.sender];
+        valueToReturn[msg.sender] = 0;
+        (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
+        if (!success) {
+            revert ValueTransferFailed();
+        }
     }
 
     /******************** UTILS ********************/
@@ -234,33 +305,46 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     ) internal {
         if (_payToken == address(0)) {
             (, int256 answer, , , ) = bnbUSDFeed.latestRoundData();
-            uint256 bnbPrice = ((_nftPrice * _amount) / uint256(answer));
+
+            uint256 bnbPrice = ((_nftPrice * _amount)) /
+                (uint256(answer) / (10 ** 8));
+
             if (msg.value < bnbPrice) {
                 revert NotEnoughValue();
             }
-            require(msg.value >= _amount, "not enough value");
+
             (bool success, ) = payable(dao).call{
-                value: (bnbPrice * daoSharePercentage) / 100
+                value: (bnbPrice * daoSharePercentage) / PERCENTAGE_DENOMINATOR
             }("");
             if (!success) {
                 revert ValueTransferFailed();
             }
+
             (bool liquiditySuccess, ) = payable(liquidityReceiver).call{
-                value: (bnbPrice * liquiditySharePercentage) / 100
+                value: (bnbPrice * liquiditySharePercentage) /
+                    PERCENTAGE_DENOMINATOR
             }("");
             if (!liquiditySuccess) {
                 revert ValueTransferFailed();
             }
+            if (msg.value > bnbPrice) {
+                valueToReturn[msg.sender] += msg.value - bnbPrice;
+            }
         } else {
+            if (msg.value != 0) {
+                revert ValueSent();
+            }
             IERC20(_payToken).safeTransferFrom(
                 msg.sender,
                 liquidityReceiver,
-                ((liquiditySharePercentage * _nftPrice) / 100) * _amount
+                ((liquiditySharePercentage * _nftPrice) /
+                    PERCENTAGE_DENOMINATOR) * _amount
             );
             IERC20(_payToken).safeTransferFrom(
                 msg.sender,
                 dao,
-                ((daoSharePercentage * _nftPrice) / 100) * _amount
+                ((daoSharePercentage * _nftPrice) / PERCENTAGE_DENOMINATOR) *
+                    _amount
             );
         }
     }
@@ -273,47 +357,56 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     ) internal {
         if (_payToken == address(0)) {
             (, int256 answer, , , ) = bnbUSDFeed.latestRoundData();
-            uint256 bnbPrice = ((_nftPrice * _amount) / uint256(answer));
-            if (msg.value < bnbPrice) {
+            uint256 bnbPrice = (_nftPrice * _amount) /
+                (uint256(answer) / 10 ** 8);
+            if (msg.value == bnbPrice) {
                 revert NotEnoughValue();
             }
-            require(msg.value >= _amount, "not enough value");
             (bool success, ) = payable(dao).call{
-                value: (bnbPrice * daoSharePercentage) / 100
+                value: (bnbPrice * daoSharePercentage) / PERCENTAGE_DENOMINATOR
             }("");
             if (!success) {
                 revert ValueTransferFailed();
             }
             (bool liquiditySuccess, ) = payable(liquidityReceiver).call{
-                value: (bnbPrice * (liquiditySharePercentage - 5)) / 100
+                value: (bnbPrice * (liquiditySharePercentage - 5)) /
+                    PERCENTAGE_DENOMINATOR
             }("");
             if (!liquiditySuccess) {
                 revert ValueTransferFailed();
             }
             (bool referralSuccess, ) = payable(_referral).call{
-                value: (bnbPrice * 5) / 100
+                value: (bnbPrice * 5) / PERCENTAGE_DENOMINATOR
             }("");
             if (!referralSuccess) {
                 revert ValueTransferFailed();
             }
+            if (msg.value > bnbPrice) {
+                valueToReturn[msg.sender] += msg.value - bnbPrice;
+            }
         } else {
-            if (liquiditySharePercentage >= 5) {
+            if (msg.value != 0) {
+                revert ValueSent();
+            }
+            if (liquiditySharePercentage >= REFFERAL_SHARE) {
                 IERC20(_payToken).safeTransferFrom(
                     msg.sender,
                     liquidityReceiver,
-                    (((liquiditySharePercentage - 5) * _nftPrice) / 100) *
-                        _amount
+                    (((liquiditySharePercentage - REFFERAL_SHARE) * _nftPrice) /
+                        PERCENTAGE_DENOMINATOR) * _amount
                 );
             }
             IERC20(_payToken).safeTransferFrom(
                 msg.sender,
                 dao,
-                ((daoSharePercentage * _nftPrice) / 100) * _amount
+                ((daoSharePercentage * _nftPrice) / PERCENTAGE_DENOMINATOR) *
+                    _amount
             );
             IERC20(_payToken).safeTransferFrom(
                 msg.sender,
                 _referral,
-                ((5 * _nftPrice) / 100) * _amount
+                ((REFFERAL_SHARE * _nftPrice) / PERCENTAGE_DENOMINATOR) *
+                    _amount
             );
         }
     }
@@ -331,11 +424,8 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     }
 
     // Builds a prefixed hash to mimic the behavior of eth_sign.
-    function prefixed(bytes32 hash) internal pure returns (bytes32) {
-        return
-            keccak256(
-                abi.encodePacked("\x19Ethereum Signed Message:\n32", hash)
-            );
+    function prefixed(bytes32 _hash) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, _hash));
     }
 
     function supportsInterface(
@@ -352,18 +442,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
             super.supportsInterface(interfaceId);
     }
 
-    /******************** MODIFIERS ********************/
-
-    modifier validAddress(address _addr) {
-        if (_addr == address(0)) {
-            revert InvalidAddress();
-        }
-        _;
-    }
-
     /******************** ADMIN FUNCTIONS & EVENTS ********************/
-
-    event PriceFeedUpdated(address newPriceFeed);
 
     /**
     @dev updates address of bnb oracle
@@ -375,8 +454,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         emit PriceFeedUpdated(_newPriceFeed);
     }
 
-    event NewReceiversSet(address newDao, address liquidity);
-
     /**
     @dev updates addresses of mint payments receivers
      */
@@ -384,12 +461,13 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         address _dao,
         address _liquidity
     ) external onlyRole(ADMIN) {
+        if (_dao == address(0) || _liquidity == address(0)) {
+            revert InvalidAddress();
+        }
         dao = _dao;
         liquidityReceiver = _liquidity;
         emit NewReceiversSet(_dao, _liquidity);
     }
-
-    event PayTokenStatusUpdated(address payToken, bool status);
 
     /**
     @dev updates token status. Tokens with status "true" can be used as payment tokens durin minting functions
@@ -402,8 +480,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         emit PayTokenStatusUpdated(_payToken, _status);
     }
 
-    event NewSharesSet(uint256 newLiquidityShare, uint256 newDaoShare);
-
     /**
     @dev updates payment split percentages
      */
@@ -411,7 +487,10 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         uint256 _liquidityShare,
         uint256 _daoShare
     ) external onlyRole(ADMIN) {
-        if (_liquidityShare + _daoShare != 100) {
+        if (
+            _liquidityShare + _daoShare != 100 ||
+            _liquidityShare < REFFERAL_SHARE
+        ) {
             revert InvalidPercentages();
         }
         liquiditySharePercentage = _liquidityShare;
@@ -420,9 +499,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         emit NewSharesSet(_liquidityShare, _daoShare);
     }
 
-    event BaseURISet(string newURI);
-
-    function setBaseURI(string memory _newURI) public onlyRole(ADMIN) {
+    function setBaseURI(string memory _newURI) external onlyRole(ADMIN) {
         baseURI = _newURI;
 
         emit BaseURISet(_newURI);
@@ -431,7 +508,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     /**
     @dev let's ADMIN to withdraw any kind of token including both native and ERC20 tokens
      */
-    function withdrawOwner(address _token) public onlyRole(ADMIN) {
+    function withdrawOwner(address _token) external onlyRole(ADMIN) {
         if (_token == address(0)) {
             (bool liquiditySuccess, ) = payable(msg.sender).call{
                 value: address(this).balance
@@ -447,15 +524,13 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         }
     }
 
-    event NewVerifierSet(address verifier);
-
     /**
     @dev sets address of the wallet that signs a message required in mint() and bundleMint()
      */
-    function setVerifier(
-        address _verifier
-    ) external onlyRole(ADMIN) validAddress(_verifier) {
-        verifier = _verifier;
-        emit NewVerifierSet(verifier);
+    function setAuthorizer(
+        address _authorizer
+    ) external onlyRole(ADMIN) validAddress(_authorizer) {
+        authorizer = _authorizer;
+        emit NewAuthorizerSet(authorizer);
     }
 }

@@ -13,7 +13,7 @@
       },
       {
         "internalType": "address",
-        "name": "_verifier",
+        "name": "_authorizer",
         "type": "address"
       },
       {
@@ -39,6 +39,11 @@
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "InaligiblePayToken",
+    "type": "error"
   },
   {
     "inputs": [],
@@ -73,6 +78,11 @@
   {
     "inputs": [],
     "name": "UnauthorizedTx",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ValueSent",
     "type": "error"
   },
   {
@@ -140,7 +150,7 @@
         "type": "uint256"
       },
       {
-        "indexed": false,
+        "indexed": true,
         "internalType": "string",
         "name": "args",
         "type": "string"
@@ -172,13 +182,26 @@
         "type": "uint256[]"
       },
       {
-        "indexed": false,
+        "indexed": true,
         "internalType": "string",
         "name": "args",
         "type": "string"
       }
     ],
     "name": "BundleMinted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "authorizer",
+        "type": "address"
+      }
+    ],
+    "name": "NewAuthorizerSet",
     "type": "event"
   },
   {
@@ -217,19 +240,6 @@
       }
     ],
     "name": "NewSharesSet",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "verifier",
-        "type": "address"
-      }
-    ],
-    "name": "NewVerifierSet",
     "type": "event"
   },
   {
@@ -396,6 +406,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "authorizer",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -482,6 +505,13 @@
   },
   {
     "inputs": [],
+    "name": "claimRefund",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "dao",
     "outputs": [
       {
@@ -501,6 +531,19 @@
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "domainSeparator",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -862,6 +905,19 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "_authorizer",
+        "type": "address"
+      }
+    ],
+    "name": "setAuthorizer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "string",
         "name": "_newURI",
         "type": "string"
@@ -922,19 +978,6 @@
       }
     ],
     "name": "setShare",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_verifier",
-        "type": "address"
-      }
-    ],
-    "name": "setVerifier",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1102,13 +1145,19 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "verifier",
-    "outputs": [
+    "inputs": [
       {
         "internalType": "address",
         "name": "",
         "type": "address"
+      }
+    ],
+    "name": "valueToReturn",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",

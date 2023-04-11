@@ -22,37 +22,50 @@ const getMessage = async (
   payToken: string,
   nonce: number,
   sigDeadline: number | BigNumber,
+  contract: CornersOfSpace,
   referral?: string
 ) => {
-  const message = ethers.utils.keccak256(
-    ethers.utils.solidityPack(
-      [
-        "address",
-        "bool",
-        "uint256",
-        "address",
-        "uint256",
-        "uint64",
-        "string",
-        "address",
+  // EIP-712 typed data object
+  //console.log((await signer.getChainId()).toString());
+  const typedData = {
+    domain: {
+      name: "CornersOfSpace",
+      version: "1",
+      chainId: await signer.getChainId(),
+      verifyingContract: contract.address,
+    },
+    types: {
+      MessageType: [
+        { name: "minter", type: "address" },
+        { name: "free", type: "bool" },
+        { name: "price", type: "uint256" },
+        { name: "payToken", type: "address" },
+        { name: "nonce", type: "uint256" },
+        { name: "sigDeadline", type: "uint64" },
+        { name: "args", type: "string" },
+        { name: "referral", type: "address" },
       ],
-      [
-        minter.address,
-        free,
-        price,
-        payToken,
-        nonce,
-        sigDeadline,
-        args,
-        referral ? referral : ethers.constants.AddressZero,
-      ]
-    )
+    },
+    message: {
+      minter: minter.address,
+      free: free,
+      price: price,
+      payToken: payToken,
+      nonce: nonce,
+      sigDeadline: sigDeadline,
+      args: args,
+      referral: referral ? referral : ethers.constants.AddressZero,
+    },
+  };
+
+  // Sign the typed data object
+  const signature = await signer._signTypedData(
+    typedData.domain,
+    typedData.types,
+    typedData.message
   );
 
-  const signedMessage = await signer.signMessage(
-    ethers.utils.arrayify(message)
-  );
-  return signedMessage;
+  return signature;
 };
 
 const getBundleMessage = async (
@@ -125,7 +138,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         ultimateAdmin.address,
         deployer.address,
         priceFeed.address,
-        "Corners of Space",
+        "CornersOfSpace",
         "CoS",
         "uri/"
       )) as CornersOfSpace;
@@ -138,6 +151,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
 
       await nft.setReceivers(ultimateAdmin.address, deployer.address);
       await nft.setShare(liquidityShare, daoShare);
+      await nft.setPayTokenStatus(paymentToken.address, true);
+      await nft.setPayTokenStatus(ethers.constants.AddressZero, true);
     });
 
     it("should transfer erc20 payment correctly", async () => {
@@ -164,7 +179,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             price,
             paymentToken.address,
             nonce,
-            deadline
+            deadline,
+            nft
           ),
           args,
           ethers.constants.AddressZero
@@ -212,7 +228,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             price,
             ethers.constants.AddressZero,
             nonce,
-            deadline
+            deadline,
+            nft
           ),
           args,
           ethers.constants.AddressZero,
@@ -269,7 +286,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
               price,
               ethers.constants.AddressZero,
               nonce,
-              deadline
+              deadline,
+              nft
             ),
             args,
             ethers.constants.AddressZero,
@@ -294,7 +312,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             price,
             paymentToken.address,
             nonce,
-            deadline
+            deadline,
+            nft
           ),
           args,
           ethers.constants.AddressZero
@@ -331,6 +350,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             paymentToken.address,
             nonce,
             deadline,
+            nft,
             hacker.address
           ),
           args,
@@ -376,6 +396,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             ethers.constants.AddressZero,
             nonce,
             deadline,
+            nft,
             hacker.address
           ),
           args,
@@ -401,7 +422,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         price.div(300).mul(5).div(100)
       );
     });
-    it("should not let mint tokens if signer isn't verifier, but message is correct", async () => {
+    it("should not let mint tokens if signer isn't authorizer, but message is correct", async () => {
       const deadline = await getSigDeadline();
 
       await expect(
@@ -420,7 +441,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
               price,
               paymentToken.address,
               nonce,
-              deadline
+              deadline,
+              nft
             ),
             args,
             ethers.constants.AddressZero
@@ -437,7 +459,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         price,
         paymentToken.address,
         nonce,
-        deadline
+        deadline,
+        nft
       );
       await advanceBlock(101);
       await expect(
@@ -474,7 +497,8 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
               price,
               paymentToken.address,
               nonce - 1,
-              deadline
+              deadline,
+              nft
             ),
             args,
             ethers.constants.AddressZero
@@ -834,11 +858,14 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             price,
             ethers.constants.AddressZero,
             nonce,
-            deadline
+            deadline,
+            nft
           ),
           args,
           ethers.constants.AddressZero,
-          { value: price.div(300).add(ethers.utils.parseEther("1.5")).sub(1) }
+          {
+            value: price.div(300).add(ethers.utils.parseEther("1.5")).sub(1),
+          }
         );
       await paymentToken
         .connect(user)
@@ -930,17 +957,17 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       ).to.be.reverted;
     });
 
-    it("should not let non-admin call setVerifier", async () => {
-      await expect(nft.connect(hacker).setVerifier(hacker.address)).to.be
+    it("should not let non-admin call setAuthorizer", async () => {
+      await expect(nft.connect(hacker).setAuthorizer(hacker.address)).to.be
         .reverted;
     });
-    it("should let admin set setVerifier", async () => {
-      await nft.setVerifier(hacker.address);
-      expect(await nft.verifier()).to.be.equal(hacker.address);
+    it("should let admin set setAuthorizer", async () => {
+      await nft.setAuthorizer(hacker.address);
+      expect(await nft.authorizer()).to.be.equal(hacker.address);
     });
-    it("should not let set verifier for address 0 ", async () => {
+    it("should not let set authorizer for address 0 ", async () => {
       await expect(
-        nft.setVerifier(ethers.constants.AddressZero)
+        nft.setAuthorizer(ethers.constants.AddressZero)
       ).to.be.revertedWithCustomError(nft, "InvalidAddress");
     });
   });

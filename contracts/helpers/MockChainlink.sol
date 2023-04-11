@@ -13,6 +13,6 @@ contract MockChainlink {
             uint80 answeredInRound
         )
     {
-        answer = 300;
+        answer = 30000000000;
     }
 }
