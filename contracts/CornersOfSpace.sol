@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@1inch/solidity-utils/contracts/libraries/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import "hardhat/console.sol";
 
@@ -20,7 +20,7 @@ error SigExpired();
 error InaligiblePayToken();
 error ValueSent();
 
-contract CornersOfSpace is ERC721Enumerable, AccessControl {
+contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
     using SafeERC20 for IERC20;
     // Token Address -> isEligible: true for eligible; false for ineligible
     mapping(address => bool) public eligibleTokens;
@@ -47,14 +47,14 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
     uint256 constant PERCENTAGE_DENOMINATOR = 100;
     uint256 constant REFFERAL_SHARE = 5;
 
-    bytes32 constant EIP712_DOMAIN_TYPEHASH =
-        keccak256(
-            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-        );
-
     bytes32 constant MESSAGE_TYPEHASH =
         keccak256(
             "MessageType(address minter,bool free,uint256 price,address payToken,uint256 nonce,uint64 sigDeadline,string args,address referral)"
+        );
+
+    bytes32 constant BUNDLE_TYPEHASH =
+        keccak256(
+            "BundleType(address minter,bool free,uint256 price,address payToken,uint256 nonce,uint64 sigDeadline,string args,uint256 amount,address referral)"
         );
 
     bytes32 public domainSeparator;
@@ -93,7 +93,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         string memory _name,
         string memory _symbol,
         string memory _uri
-    ) ERC721(_name, _symbol) {
+    ) ERC721(_name, _symbol) EIP712(_name, "1") {
         _grantRole(ULTIMATE_ADMIN, _adminController);
         _setRoleAdmin(ADMIN, ULTIMATE_ADMIN);
         _grantRole(ADMIN, _admin);
@@ -105,16 +105,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
         baseURI = _uri;
         authorizer = _authorizer;
         bnbUSDFeed = _priceFeed;
-
-        domainSeparator = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPEHASH,
-                keccak256(bytes(_name)),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(this)
-            )
-        );
 
         emit NewAuthorizerSet(_authorizer);
         emit BaseURISet(_uri);
@@ -163,7 +153,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
             revert InaligiblePayToken();
         }
 
-        bytes32 message = prefixed(
+        bytes32 message = _hashTypedDataV4(
             keccak256(
                 abi.encode(
                     MESSAGE_TYPEHASH,
@@ -173,12 +163,12 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
                     _payToken,
                     _nonce,
                     _blockDeadline,
-                    _args,
+                    keccak256(bytes(_args)),
                     _referral
                 )
             )
         );
-        console.logBytes32(message);
+
         if (ECDSA.recover(message, _sig) != authorizer) {
             revert UnauthorizedTx();
         }
@@ -237,16 +227,17 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl {
             revert InvalidTokenAmount();
         }
 
-        bytes32 message = prefixed(
+        bytes32 message = _hashTypedDataV4(
             keccak256(
                 abi.encode(
+                    BUNDLE_TYPEHASH,
                     msg.sender,
                     _free,
                     _nftPrice,
                     _payToken,
                     _nonce,
                     _blockDeadline,
-                    _args,
+                    keccak256(bytes(_args)),
                     _tokenAmount,
                     _referral
                 )

@@ -5,7 +5,6 @@ import { ethers } from "hardhat";
 import { CornersOfSpace } from "../typechain-types/contracts/CornersOfSpace";
 import { TERC20 } from "../typechain-types/contracts/helpers/TERC20";
 import { MockChainlink } from "../typechain-types/contracts/helpers/MockChainlink";
-
 import { advanceBlock, latest } from "./utils/timeMethods";
 
 const args = "This is 20 symbols!!";
@@ -25,8 +24,6 @@ const getMessage = async (
   contract: CornersOfSpace,
   referral?: string
 ) => {
-  // EIP-712 typed data object
-  //console.log((await signer.getChainId()).toString());
   const typedData = {
     domain: {
       name: "CornersOfSpace",
@@ -57,7 +54,6 @@ const getMessage = async (
       referral: referral ? referral : ethers.constants.AddressZero,
     },
   };
-
   // Sign the typed data object
   const signature = await signer._signTypedData(
     typedData.domain,
@@ -77,40 +73,52 @@ const getBundleMessage = async (
   nonce: number,
   amount: number,
   sigDeadline: number | BigNumber,
+  contract: CornersOfSpace,
   referral: string
 ) => {
-  const message = ethers.utils.keccak256(
-    ethers.utils.solidityPack(
-      [
-        "address",
-        "bool",
-        "uint256",
-        "address",
-        "uint256",
-        "uint64",
-        "string",
-        "uint256",
-        "address",
+  const typedData = {
+    domain: {
+      name: "CornersOfSpace",
+      version: "1",
+      chainId: await signer.getChainId(),
+      verifyingContract: contract.address,
+    },
+    types: {
+      BundleType: [
+        { name: "minter", type: "address" },
+        { name: "free", type: "bool" },
+        { name: "price", type: "uint256" },
+        { name: "payToken", type: "address" },
+        { name: "nonce", type: "uint256" },
+        { name: "sigDeadline", type: "uint64" },
+        { name: "args", type: "string" },
+        { name: "amount", type: "uint256" },
+        { name: "referral", type: "address" },
       ],
-      [
-        minter.address,
-        free,
-        price,
-        payToken,
-        nonce,
-        sigDeadline,
-        args,
-        amount,
-        referral,
-      ]
-    )
+    },
+    message: {
+      minter: minter.address,
+      free: free,
+      price: price,
+      payToken: payToken,
+      nonce: nonce,
+      sigDeadline: sigDeadline,
+      args: args,
+      amount: amount,
+      referral: referral,
+    },
+  };
+
+  // Sign the typed data object
+  const signature = await signer._signTypedData(
+    typedData.domain,
+    typedData.types,
+    typedData.message
   );
 
-  const signedMessage = await signer.signMessage(
-    ethers.utils.arrayify(message)
-  );
-  return signedMessage;
+  return signature;
 };
+
 const price = ethers.utils.parseEther("1");
 
 describe("Smoke functionality of Corners of Space NFT minting", () => {
@@ -530,6 +538,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             nonce,
             amountToMint,
             deadline,
+            nft,
             ethers.constants.AddressZero
           ),
           args,
@@ -566,6 +575,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             nonce,
             amountToMint,
             deadline,
+            nft,
             ethers.constants.AddressZero
           ),
           args,
@@ -612,6 +622,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             nonce,
             amount,
             deadline,
+            nft,
             hacker.address
           ),
           args,
@@ -665,6 +676,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             nonce,
             amount,
             deadline,
+            nft,
             ethers.constants.AddressZero
           ),
           args,
@@ -713,6 +725,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
               nonce,
               amount,
               deadline,
+              nft,
               hacker.address
             ),
             args,
@@ -757,6 +770,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
               nonce,
               amount,
               deadline,
+              nft,
               hacker.address
             ),
             args,
@@ -792,6 +806,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
               nonce,
               amount,
               deadline,
+              nft,
               hacker.address
             ),
             args,
@@ -826,6 +841,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
               nonce,
               amount,
               deadline,
+              nft,
               hacker.address
             ),
             args,
