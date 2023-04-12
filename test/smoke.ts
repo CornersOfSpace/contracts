@@ -852,6 +852,13 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       ).to.be.revertedWithCustomError(nft, "SigExpired");
       nonce++;
     });
+    it("should let claim refund", async () => {
+      expect(await ethers.provider.getBalance(nft.address)).to.be.equal(
+        "3926666666666666674"
+      );
+      await expect(nft.connect(user).claimRefund()).to.be.not.reverted;
+      expect(await ethers.provider.getBalance(nft.address)).to.be.equal("6");
+    });
 
     it("should let admin call withdrawOwner", async () => {
       await expect(nft.withdrawOwner(ethers.constants.AddressZero)).to.not.be
@@ -880,7 +887,7 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
           args,
           ethers.constants.AddressZero,
           {
-            value: price.div(300).add(ethers.utils.parseEther("1.5")).sub(1),
+            value: price.div(300).add(ethers.utils.parseEther("1.5")),
           }
         );
       await paymentToken
@@ -894,6 +901,9 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         nft.address
       );
       await nft.withdrawOwner(ethers.constants.AddressZero);
+      expect(await nft.lockedFunds()).to.be.equal(
+        ethers.utils.parseEther("1.5")
+      );
       await nft.withdrawOwner(paymentToken.address);
 
       const contractERC20BalanceAfter = await paymentToken.balanceOf(
@@ -907,9 +917,11 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       expect(contractERC20BalanceBefore).to.be.equal(
         ethers.utils.parseEther("1.5")
       );
-      expect(contractEthBalanceAfter).to.be.equal(0);
-      expect(contractEthBalanceBefore).to.be.equal(
+      expect(contractEthBalanceAfter).to.be.equal(
         ethers.utils.parseEther("1.5")
+      );
+      expect(contractEthBalanceBefore).to.be.equal(
+        ethers.utils.parseEther("1.5").add("1")
       );
     });
     it("should not let non-admin call updatePriceFeed", async () => {

@@ -7,7 +7,6 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
-import "hardhat/console.sol";
 
 error InvalidPercentages();
 error InvalidAddress();
@@ -19,6 +18,7 @@ error InvalidTokenAmount();
 error SigExpired();
 error InaligiblePayToken();
 error ValueSent();
+error NoRefundAvailable();
 
 contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
     using SafeERC20 for IERC20;
@@ -58,6 +58,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
         );
 
     bytes32 public domainSeparator;
+    uint256 public lockedFunds;
 
     mapping(uint256 => bool) public usedNonces;
 
@@ -145,13 +146,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
         string calldata _args,
         address _referral
     ) external payable {
-        _handleNonce(_nonce);
-        if (_blockDeadline < block.number) {
-            revert SigExpired();
-        }
-        if (!eligibleTokens[_payToken]) {
-            revert InaligiblePayToken();
-        }
+        _handleChecksAndNonce(_nonce, _blockDeadline, _payToken);
 
         bytes32 message = _hashTypedDataV4(
             keccak256(
@@ -216,13 +211,8 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
         uint256 _tokenAmount,
         address _referral
     ) external payable {
-        _handleNonce(_nonce);
-        if (_blockDeadline < block.number) {
-            revert SigExpired();
-        }
-        if (!eligibleTokens[_payToken]) {
-            revert InaligiblePayToken();
-        }
+        _handleChecksAndNonce(_nonce, _blockDeadline, _payToken);
+
         if (_tokenAmount == 0) {
             revert InvalidTokenAmount();
         }
@@ -261,10 +251,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
         uint256[] memory tokenIds = new uint256[](_tokenAmount);
         uint256 currentTokenId = _currentTokenId;
         for (uint i; i < _tokenAmount; i++) {
-            uint256 newTokenId = currentTokenId + 1;
             currentTokenId++;
-            _safeMint(msg.sender, newTokenId);
-            tokenIds[i] = newTokenId;
+            _safeMint(msg.sender, currentTokenId);
+            tokenIds[i] = currentTokenId;
         }
         _currentTokenId = currentTokenId;
 
@@ -273,18 +262,34 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
 
     function claimRefund() external {
         uint256 refundAmount = valueToReturn[msg.sender];
+        if (refundAmount == 0) {
+            revert NoRefundAvailable();
+        }
         valueToReturn[msg.sender] = 0;
+        lockedFunds -= refundAmount;
         (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
         if (!success) {
+            lockedFunds += refundAmount;
+            valueToReturn[msg.sender] = refundAmount;
             revert ValueTransferFailed();
         }
     }
 
     /******************** UTILS ********************/
 
-    function _handleNonce(uint256 _nonce) private {
+    function _handleChecksAndNonce(
+        uint256 _nonce,
+        uint256 _blockDeadline,
+        address _payToken
+    ) private {
         if (usedNonces[_nonce]) {
             revert InvalidNonce();
+        }
+        if (_blockDeadline < block.number) {
+            revert SigExpired();
+        }
+        if (!eligibleTokens[_payToken]) {
+            revert InaligiblePayToken();
         }
         usedNonces[_nonce] = true;
     }
@@ -292,13 +297,13 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
     function _transfer(
         uint256 _amount,
         address _payToken,
-        uint256 _nftPrice
+        uint256 _nftPrice // ethers.utils.parseEther("1");
     ) internal {
         if (_payToken == address(0)) {
             (, int256 answer, , , ) = bnbUSDFeed.latestRoundData();
 
-            uint256 bnbPrice = ((_nftPrice * _amount)) /
-                (uint256(answer) / (10 ** 8));
+            uint256 bnbPrice = ((_nftPrice * 10 ** 8) * _amount) /
+                uint256(answer);
 
             if (msg.value < bnbPrice) {
                 revert NotEnoughValue();
@@ -319,7 +324,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
                 revert ValueTransferFailed();
             }
             if (msg.value > bnbPrice) {
-                valueToReturn[msg.sender] += msg.value - bnbPrice;
+                uint256 amount = msg.value - bnbPrice;
+                lockedFunds += amount;
+                valueToReturn[msg.sender] += amount;
             }
         } else {
             if (msg.value != 0) {
@@ -348,8 +355,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
     ) internal {
         if (_payToken == address(0)) {
             (, int256 answer, , , ) = bnbUSDFeed.latestRoundData();
-            uint256 bnbPrice = (_nftPrice * _amount) /
-                (uint256(answer) / 10 ** 8);
+
+            uint256 bnbPrice = ((_nftPrice * 10 ** 8) * _amount) /
+                uint256(answer);
             if (msg.value == bnbPrice) {
                 revert NotEnoughValue();
             }
@@ -373,7 +381,9 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
                 revert ValueTransferFailed();
             }
             if (msg.value > bnbPrice) {
-                valueToReturn[msg.sender] += msg.value - bnbPrice;
+                uint256 amount = msg.value - bnbPrice;
+                lockedFunds += amount;
+                valueToReturn[msg.sender] += amount;
             }
         } else {
             if (msg.value != 0) {
@@ -412,11 +422,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
         for (uint i = 0; i < length; i++)
             result[i] = tokenOfOwnerByIndex(account, i);
         return result;
-    }
-
-    // Builds a prefixed hash to mimic the behavior of eth_sign.
-    function prefixed(bytes32 _hash) internal view returns (bytes32) {
-        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, _hash));
     }
 
     function supportsInterface(
@@ -502,7 +507,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
     function withdrawOwner(address _token) external onlyRole(ADMIN) {
         if (_token == address(0)) {
             (bool liquiditySuccess, ) = payable(msg.sender).call{
-                value: address(this).balance
+                value: address(this).balance - lockedFunds
             }("");
             if (!liquiditySuccess) {
                 revert ValueTransferFailed();

@@ -67,6 +67,11 @@
   },
   {
     "inputs": [],
+    "name": "NoRefundAvailable",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "NotEnoughValue",
     "type": "error"
   },
@@ -707,6 +712,19 @@
   {
     "inputs": [],
     "name": "liquiditySharePercentage",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "lockedFunds",
     "outputs": [
       {
         "internalType": "uint256",
