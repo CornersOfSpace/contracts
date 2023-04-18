@@ -302,6 +302,31 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
             { value: value.sub(1) }
           )
       ).to.be.revertedWithCustomError(nft, "NotEnoughValue");
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              deadline,
+              nft,
+              hacker.address
+            ),
+            args,
+            hacker.address,
+            { value: value.sub(1) }
+          )
+      ).to.be.revertedWithCustomError(nft, "NotEnoughValue");
     });
     it("should let mint tokens correctly", async () => {
       const deadline = await getSigDeadline();
@@ -382,6 +407,64 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
         price.mul(5).div(100)
       );
     });
+    it("should revert if erc20 method receives a value", async () => {
+      const deadline = await getSigDeadline();
+
+      await paymentToken
+        .connect(user)
+        .approve(nft.address, ethers.utils.parseEther("100"));
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            paymentToken.address,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              paymentToken.address,
+              nonce,
+              deadline,
+              nft,
+              hacker.address
+            ),
+            args,
+            hacker.address,
+            { value: 145 }
+          )
+      ).to.be.revertedWithCustomError(nft, "ValueSent");
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            paymentToken.address,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              paymentToken.address,
+              nonce,
+              deadline,
+              nft,
+              ethers.constants.AddressZero
+            ),
+            args,
+            ethers.constants.AddressZero,
+            { value: 145 }
+          )
+      ).to.be.revertedWithCustomError(nft, "ValueSent");
+      nonce++;
+    });
     it("should transfer native token payment correctly with referral in place", async () => {
       const deadline = await getSigDeadline();
       const balanceBefore = await deployer.getBalance();
@@ -429,6 +512,34 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       expect(referralBalanceAfter.sub(referralBalanceBefore)).to.be.equal(
         price.div(300).mul(5).div(100)
       );
+    });
+    it("should revert if random token is used", async () => {
+      const deadline = await getSigDeadline();
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            hacker.address,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              hacker.address,
+              nonce,
+              deadline,
+              nft,
+              hacker.address
+            ),
+            args,
+            hacker.address,
+            { value: price }
+          )
+      ).to.be.revertedWithCustomError(nft, "InaligiblePayToken");
     });
     it("should not let mint tokens if signer isn't authorizer, but message is correct", async () => {
       const deadline = await getSigDeadline();
@@ -852,6 +963,140 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       ).to.be.revertedWithCustomError(nft, "SigExpired");
       nonce++;
     });
+    it("should revert if ether  transfer fails", async () => {
+      const deadline = await getSigDeadline();
+      await nft.setReceivers(paymentToken.address, paymentToken.address);
+
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              deadline,
+              nft,
+              ethers.constants.AddressZero
+            ),
+            args,
+            ethers.constants.AddressZero,
+            { value: price }
+          )
+      ).to.be.revertedWithCustomError(nft, "ValueTransferFailed");
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              deadline,
+              nft,
+              hacker.address
+            ),
+            args,
+            hacker.address,
+            { value: price }
+          )
+      ).to.be.revertedWithCustomError(nft, "ValueTransferFailed");
+      await nft.setReceivers(deployer.address, paymentToken.address);
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              deadline,
+              nft,
+              ethers.constants.AddressZero
+            ),
+            args,
+            ethers.constants.AddressZero,
+            { value: price }
+          )
+      ).to.be.revertedWithCustomError(nft, "ValueTransferFailed");
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              deadline,
+              nft,
+              hacker.address
+            ),
+            args,
+            hacker.address,
+            { value: price }
+          )
+      ).to.be.revertedWithCustomError(nft, "ValueTransferFailed");
+
+      await nft.setReceivers(deployer.address, deployer.address);
+      await expect(
+        nft
+          .connect(user)
+          .mint(
+            false,
+            ethers.constants.AddressZero,
+            price,
+            nonce,
+            deadline,
+            await getMessage(
+              deployer,
+              user,
+              false,
+              price,
+              ethers.constants.AddressZero,
+              nonce,
+              deadline,
+              nft,
+              paymentToken.address
+            ),
+            args,
+            paymentToken.address,
+            { value: price }
+          )
+      ).to.be.revertedWithCustomError(nft, "ValueTransferFailed");
+    });
+
     it("should let claim refund", async () => {
       expect(await ethers.provider.getBalance(nft.address)).to.be.equal(
         "3926666666666666674"
@@ -923,6 +1168,19 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
       expect(contractEthBalanceBefore).to.be.equal(
         ethers.utils.parseEther("1.5").add("1")
       );
+    });
+
+    it("should let change base uri to admin correctly", async () => {
+      await nft.setBaseURI("test-change/");
+      expect(await nft.tokenURI(1)).to.be.equal("test-change/1");
+    });
+    it("should revert if address 0 set for receivers", async () => {
+      await expect(
+        nft.setReceivers(
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero
+        )
+      ).to.be.revertedWithCustomError(nft, "InvalidAddress");
     });
     it("should not let non-admin call updatePriceFeed", async () => {
       await expect(nft.connect(hacker).updatePriceFeed(hacker.address)).to.be
@@ -996,6 +1254,26 @@ describe("Smoke functionality of Corners of Space NFT minting", () => {
     it("should not let set authorizer for address 0 ", async () => {
       await expect(
         nft.setAuthorizer(ethers.constants.AddressZero)
+      ).to.be.revertedWithCustomError(nft, "InvalidAddress");
+    });
+    it("should revert refund if there is nothing to refund", async () => {
+      await expect(
+        nft.connect(ultimateAdmin).claimRefund()
+      ).to.be.revertedWithCustomError(nft, "NoRefundAvailable");
+    });
+    it("should not let deploy contract with address 0 authorizer", async () => {
+      await expect(
+        (
+          await ethers.getContractFactory("CornersOfSpace")
+        ).deploy(
+          deployer.address,
+          ultimateAdmin.address,
+          ethers.constants.AddressZero,
+          priceFeed.address,
+          "CornersOfSpace",
+          "CoS",
+          "uri/"
+        )
       ).to.be.revertedWithCustomError(nft, "InvalidAddress");
     });
   });

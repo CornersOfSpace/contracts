@@ -269,8 +269,6 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
         lockedFunds -= refundAmount;
         (bool success, ) = payable(msg.sender).call{value: refundAmount}("");
         if (!success) {
-            lockedFunds += refundAmount;
-            valueToReturn[msg.sender] = refundAmount;
             revert ValueTransferFailed();
         }
     }
@@ -358,7 +356,7 @@ contract CornersOfSpace is ERC721Enumerable, AccessControl, EIP712 {
 
             uint256 bnbPrice = ((_nftPrice * 10 ** 8) * _amount) /
                 uint256(answer);
-            if (msg.value == bnbPrice) {
+            if (msg.value < bnbPrice) {
                 revert NotEnoughValue();
             }
             (bool success, ) = payable(dao).call{
