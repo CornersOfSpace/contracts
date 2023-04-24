@@ -1,18 +1,38 @@
 import { ethers } from "hardhat";
+import { CornersOfSpace } from "../typechain-types/contracts/CornersOfSpace";
 
 async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-  const unlockTime = currentTimestampInSeconds + ONE_YEAR_IN_SECS;
+  // Create deployer object and load the artifact of the contract you want to deploy.
 
-  const lockedAmount = ethers.utils.parseEther("1");
+  const cos = (await ethers.getContractAt(
+    "CornersOfSpace",
+    "0x85c6C7B1E4dea91954CebA1CFA56066C60afAa1F"
+  )) as CornersOfSpace;
 
-  const Lock = await ethers.getContractFactory("Lock");
-  const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+  console.log("Setting Shares...");
+  await cos.setShare(
+    process.env.LIQUIDITY_SHARE as string,
+    process.env.DAO_SHARE as string
+  );
 
-  await lock.deployed();
+  console.log("Setting Receivers...");
+  await cos.setReceivers(
+    process.env.DAO as string,
+    process.env.LIQUIDITY_RECEIVER as string
+  );
 
-  console.log(`Lock with 1 ETH and unlock timestamp ${unlockTime} deployed to ${lock.address}`);
+  console.log("Setting PayTokens...");
+  await cos.setReceivers(
+    process.env.DAO as string,
+    process.env.LIQUIDITY_RECEIVER as string
+  );
+
+  console.log("Setting sell token1...");
+
+  await cos.setPayTokenStatus(
+    "0xF4A1811D267Bc75Fd38247c9DCF3bad6DE169707",
+    true
+  );
 }
 
 // We recommend this pattern to be able to use async/await everywhere
